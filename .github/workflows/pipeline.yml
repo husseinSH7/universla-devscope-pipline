@@ -1,0 +1,389 @@
+name: Universal DevSecOps Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      deploy_target:
+        description: 'Deployment target: docker or k8s'
+        required: false
+        type: string
+        default: 'docker'
+      severity_gate:
+        description: 'Minimum severity level to block deployment (CRITICAL, HIGH, MEDIUM, LOW)'
+        required: false
+        type: string
+        default: 'HIGH'
+      enable_canary:
+        description: 'Enable canary deployment for k8s'
+        required: false
+        type: boolean
+        default: false
+      canary_percentage:
+        description: 'Canary deployment percentage (default: 10%)'
+        required: false
+        type: string
+        default: '10%'
+      enable_sarif:
+        description: 'Enable SARIF report upload to GitHub Security'
+        required: false
+        type: boolean
+        default: true
+      dockerfile_path:
+        description: 'Path to Dockerfile (default: ./Dockerfile)'
+        required: false
+        type: string
+        default: './Dockerfile'
+      build_context:
+        description: 'Docker build context (default: .)'
+        required: false
+        type: string
+        default: '.'
+      
+    secrets:
+      github_token:
+        required: true
+      ssh_host:
+        required: false
+      ssh_username:
+        required: false
+      ssh_key:
+        required: false
+      kube_config:
+        required: false
+
+    outputs:
+      image_tag:
+        description: 'Docker image tag that was built'
+        value: ${{ jobs.build.outputs.image_tag }}
+      stack:
+        description: 'Detected application stack'
+        value: ${{ jobs.detect.outputs.stack }}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  detect:
+    name: Detect Stack
+    runs-on: ubuntu-latest
+    outputs:
+      stack: ${{ steps.detect.outputs.stack }}
+      package_manager: ${{ steps.detect.outputs.package_manager }}
+      test_command: ${{ steps.detect.outputs.test_command }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect application stack
+        id: detect
+        run: |
+          if [ -f "package.json" ]; then
+            echo "stack=node" >> $GITHUB_OUTPUT
+            if [ -f "yarn.lock" ]; then
+              echo "package_manager=yarn" >> $GITHUB_OUTPUT
+              echo "test_command=yarn test" >> $GITHUB_OUTPUT
+            elif [ -f "pnpm-lock.yaml" ]; then
+              echo "package_manager=pnpm" >> $GITHUB_OUTPUT
+              echo "test_command=pnpm test" >> $GITHUB_OUTPUT
+            else
+              echo "package_manager=npm" >> $GITHUB_OUTPUT
+              echo "test_command=npm test" >> $GITHUB_OUTPUT
+            fi
+          elif [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ]; then
+            echo "stack=python" >> $GITHUB_OUTPUT
+            if [ -f "pyproject.toml" ] && grep -q "poetry" pyproject.toml; then
+              echo "package_manager=poetry" >> $GITHUB_OUTPUT
+              echo "test_command=poetry run pytest" >> $GITHUB_OUTPUT
+            else
+              echo "package_manager=pip" >> $GITHUB_OUTPUT
+              echo "test_command=python -m pytest" >> $GITHUB_OUTPUT
+            fi
+          elif [ -f "go.mod" ]; then
+            echo "stack=go" >> $GITHUB_OUTPUT
+            echo "package_manager=go" >> $GITHUB_OUTPUT
+            echo "test_command=go test ./..." >> $GITHUB_OUTPUT
+          elif [ -f "Cargo.toml" ]; then
+            echo "stack=rust" >> $GITHUB_OUTPUT
+            echo "package_manager=cargo" >> $GITHUB_OUTPUT
+            echo "test_command=cargo test" >> $GITHUB_OUTPUT
+          else
+            echo "stack=unknown" >> $GITHUB_OUTPUT
+            echo "package_manager=none" >> $GITHUB_OUTPUT
+            echo "test_command=echo 'No tests configured'" >> $GITHUB_OUTPUT
+          fi
+
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: detect
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        if: needs.detect.outputs.stack == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: ${{ needs.detect.outputs.package_manager }}
+
+      - name: Set up Python
+        if: needs.detect.outputs.stack == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: ${{ needs.detect.outputs.package_manager == 'pip' && 'pip' || '' }}
+
+      - name: Set up Go
+        if: needs.detect.outputs.stack == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Set up Rust
+        if: needs.detect.outputs.stack == 'rust'
+        uses: actions/setup-rust@v1
+        with:
+          rust-version: stable
+
+      - name: Install dependencies (Node.js)
+        if: needs.detect.outputs.stack == 'node'
+        run: |
+          if [ "${{ needs.detect.outputs.package_manager }}" = "yarn" ]; then
+            yarn install --frozen-lockfile
+          elif [ "${{ needs.detect.outputs.package_manager }}" = "pnpm" ]; then
+            pnpm install --frozen-lockfile
+          else
+            npm ci
+          fi
+
+      - name: Install dependencies (Python)
+        if: needs.detect.outputs.stack == 'python'
+        run: |
+          if [ "${{ needs.detect.outputs.package_manager }}" = "poetry" ]; then
+            poetry install
+          else
+            pip install -r requirements.txt
+          fi
+
+      - name: Run tests
+        run: ${{ needs.detect.outputs.test_command }}
+
+  dependency-scan:
+    name: Dependency Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: detect
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy dependency scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: ${{ inputs.enable_sarif && 'sarif' || 'table' }}
+          output: ${{ inputs.enable_sarif && 'trivy-dep-results.sarif' || '' }}
+          severity: 'CRITICAL,HIGH,MEDIUM,LOW'
+          exit-code: '1'
+          vuln-type: 'os,library'
+
+      - name: Upload Trivy results to GitHub Security
+        if: inputs.enable_sarif == true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-dep-results.sarif'
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.github_token }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      - name: Upload Gitleaks results to GitHub Security
+        if: always() && inputs.enable_sarif == true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'gitleaks-report.sarif'
+
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [detect, test, dependency-scan, secret-scan]
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.github_token }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ inputs.build_context }}
+          file: ${{ inputs.dockerfile_path }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+  image-scan:
+    name: Container Image Scan
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build.outputs.image_tag }}
+          format: ${{ inputs.enable_sarif && 'sarif' || 'table' }}
+          output: ${{ inputs.enable_sarif && 'trivy-image-results.sarif' || '' }}
+          severity: ${{ inputs.severity_gate }}
+          exit-code: '1'
+
+      - name: Upload Trivy image results to GitHub Security
+        if: inputs.enable_sarif == true
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, image-scan]
+    if: github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: ${{ steps.docker-deploy.outputs.url || steps.k8s-deploy.outputs.url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Docker (Staging)
+        id: docker-deploy
+        if: inputs.deploy_target == 'docker'
+        uses: ./.github/actions/docker-deploy
+        with:
+          ssh_host: ${{ secrets.ssh_host }}
+          ssh_username: ${{ secrets.ssh_username }}
+          ssh_key: ${{ secrets.ssh_key }}
+          image_tag: ${{ needs.build.outputs.image_tag }}
+          environment: staging
+
+      - name: Deploy to Kubernetes (Staging)
+        id: k8s-deploy
+        if: inputs.deploy_target == 'k8s'
+        uses: ./.github/actions/k8s-deploy
+        with:
+          kube_config: ${{ secrets.kube_config }}
+          image_tag: ${{ needs.build.outputs.image_tag }}
+          environment: staging
+          chart_path: ./chart
+          enable_canary: false
+
+      - name: Run health checks
+        id: health-check
+        run: |
+          DEPLOY_URL="${{ steps.docker-deploy.outputs.url || steps.k8s-deploy.outputs.url }}"
+          ./scripts/health-check.sh staging "$DEPLOY_URL"
+
+      - name: Rollback on health check failure
+        if: failure() && steps.health-check.outcome == 'failure'
+        run: |
+          if [ "${{ inputs.deploy_target }}" = "docker" ]; then
+            ./scripts/docker-rollback.sh staging
+          else
+            ./scripts/k8s-rollback.sh staging
+          fi
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, image-scan]
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: ${{ steps.docker-deploy.outputs.url || steps.k8s-deploy.outputs.url }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Docker (Production)
+        id: docker-deploy
+        if: inputs.deploy_target == 'docker'
+        uses: ./.github/actions/docker-deploy
+        with:
+          ssh_host: ${{ secrets.ssh_host }}
+          ssh_username: ${{ secrets.ssh_username }}
+          ssh_key: ${{ secrets.ssh_key }}
+          image_tag: ${{ needs.build.outputs.image_tag }}
+          environment: production
+
+      - name: Deploy to Kubernetes (Production)
+        id: k8s-deploy
+        if: inputs.deploy_target == 'k8s'
+        uses: ./.github/actions/k8s-deploy
+        with:
+          kube_config: ${{ secrets.kube_config }}
+          image_tag: ${{ needs.build.outputs.image_tag }}
+          environment: production
+          chart_path: ./chart
+          enable_canary: ${{ inputs.enable_canary }}
+          canary_percentage: ${{ inputs.canary_percentage }}
+
+      - name: Run health checks
+        id: health-check
+        run: |
+          DEPLOY_URL="${{ steps.docker-deploy.outputs.url || steps.k8s-deploy.outputs.url }}"
+          ./scripts/health-check.sh production "$DEPLOY_URL"
+
+      - name: Rollback on health check failure
+        if: failure() && steps.health-check.outcome == 'failure'
+        run: |
+          if [ "${{ inputs.deploy_target }}" = "docker" ]; then
+            ./scripts/docker-rollback.sh production
+          else
+            ./scripts/k8s-rollback.sh production
+          fi
+
+      - name: Complete canary deployment
+        if: inputs.deploy_target == 'k8s' && inputs.enable_canary == true && success()
+        run: |
+          ./scripts/k8s-canary-complete.sh production ${{ inputs.canary_percentage }}

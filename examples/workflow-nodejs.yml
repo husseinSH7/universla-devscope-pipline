@@ -1,0 +1,39 @@
+# Example GitHub Actions workflow for Node.js projects
+# This shows how to call the universal DevSecOps pipeline toolkit
+
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  pipeline:
+    name: DevSecOps Pipeline
+    uses: your-username/pipeline-toolkit/.github/workflows/pipeline.yml@main
+    with:
+      # Deployment target: 'docker' for VPS, 'k8s' for Kubernetes
+      deploy_target: 'docker'
+      
+      # Severity gate for security scans
+      severity_gate: 'HIGH'
+      
+      # Enable canary deployments (for k8s only)
+      enable_canary: false
+      
+      # Enable SARIF reports in GitHub Security tab
+      enable_sarif: true
+      
+      # Docker configuration
+      dockerfile_path: './Dockerfile'
+      build_context: '.'
+    secrets:
+      github_token: ${{ secrets.GITHUB_TOKEN }}
+      # Docker deployment secrets
+      ssh_host: ${{ secrets.SSH_HOST }}
+      ssh_username: ${{ secrets.SSH_USERNAME }}
+      ssh_key: ${{ secrets.SSH_KEY }}
+      # Kubernetes deployment secrets (if using k8s)
+      # kube_config: ${{ secrets.KUBE_CONFIG }}

@@ -1,0 +1,13 @@
+apiVersion: v2
+name: generic-app
+description: A generic Helm chart for deploying applications to Kubernetes
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - application
+  - deployment
+  - generic
+maintainers:
+  - name: DevSecOps Pipeline Toolkit
+    email: devops@example.com

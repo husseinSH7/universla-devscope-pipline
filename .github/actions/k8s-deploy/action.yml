@@ -1,0 +1,126 @@
+name: 'Kubernetes Deployment'
+description: 'Deploy applications to Kubernetes using Helm'
+
+inputs:
+  kube_config:
+    description: 'Base64 encoded kubeconfig'
+    required: true
+  image_tag:
+    description: 'Docker image tag to deploy'
+    required: true
+  environment:
+    description: 'Environment name (staging/production)'
+    required: true
+  chart_path:
+    description: 'Path to Helm chart'
+    required: true
+  release_name:
+    description: 'Helm release name'
+    required: false
+    default: 'app'
+  namespace:
+    description: 'Kubernetes namespace'
+    required: false
+    default: 'default'
+  enable_canary:
+    description: 'Enable canary deployment'
+    required: false
+    default: false
+  canary_percentage:
+    description: 'Canary deployment percentage'
+    required: false
+    default: '10%'
+  create_namespace:
+    description: 'Create namespace if it does not exist'
+    required: false
+    default: true
+  values_file:
+    description: 'Custom values file path'
+    required: false
+    default: ''
+
+outputs:
+  url:
+    description: 'Deployed application URL'
+    value: ${{ steps.get-url.outputs.url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'v3.13.0'
+
+    - name: Configure kubeconfig
+      shell: bash
+      run: |
+        echo "${{ inputs.kube_config }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Create namespace if needed
+      if: inputs.create_namespace == true
+      shell: bash
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl create namespace ${{ inputs.namespace }} --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Add Helm dependencies
+      shell: bash
+      run: |
+        export KUBECONFIG=kubeconfig
+        cd ${{ inputs.chart_path }}
+        helm dependency build
+
+    - name: Deploy with Helm
+      id: deploy
+      shell: bash
+      run: |
+        export KUBECONFIG=kubeconfig
+        
+        HELM_ARGS="upgrade --install ${{ inputs.release_name }} ${{ inputs.chart_path }}"
+        HELM_ARGS="$HELM_ARGS --namespace ${{ inputs.namespace }}"
+        HELM_ARGS="$HELM_ARGS --set image.tag=${{ inputs.image_tag }}"
+        HELM_ARGS="$HELM_ARGS --set environment=${{ inputs.environment }}"
+        
+        if [ "${{ inputs.enable_canary }}" = "true" ]; then
+          HELM_ARGS="$HELM_ARGS --set canary.enabled=true"
+          HELM_ARGS="$HELM_ARGS --set canary.percentage=${{ inputs.canary_percentage }}"
+        fi
+        
+        if [ -n "${{ inputs.values_file }}" ]; then
+          HELM_ARGS="$HELM_ARGS --values ${{ inputs.values_file }}"
+        fi
+        
+        helm $HELM_ARGS
+
+    - name: Wait for deployment to be ready
+      if: inputs.enable_canary == false
+      shell: bash
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl rollout status deployment/${{ inputs.release_name }} -n ${{ inputs.namespace }} --timeout=5m
+
+    - name: Get deployment URL
+      id: get-url
+      shell: bash
+      run: |
+        export KUBECONFIG=kubeconfig
+        INGRESS_HOST=$(kubectl get ingress ${{ inputs.release_name }} -n ${{ inputs.namespace }} -o jsonpath='{.spec.rules[0].host}')
+        
+        if [ "${{ inputs.environment }}" = "staging" ]; then
+          echo "url=https://${INGRESS_HOST}" >> $GITHUB_OUTPUT
+        else
+          echo "url=https://${INGRESS_HOST}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Cleanup kubeconfig
+      if: always()
+      shell: bash
+      run: |
+        rm -f kubeconfig

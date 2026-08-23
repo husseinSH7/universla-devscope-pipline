@@ -1,0 +1,58 @@
+# Staging environment values
+# Override default values for staging deployments
+
+replicaCount: 1
+
+image:
+  tag: "staging"
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+autoscaling:
+  enabled: false
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  hosts:
+    - host: staging.yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Staging-specific configuration
+environment: staging
+
+# Enable debug logging
+app:
+  env:
+    - name: NODE_ENV
+      value: "staging"
+    - name: LOG_LEVEL
+      value: "debug"
+
+# More permissive health checks for staging
+livenessProbe:
+  initialDelaySeconds: 15
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 5
+
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Disable pod disruption budget for single-replica staging
+podDisruptionBudget:
+  enabled: false

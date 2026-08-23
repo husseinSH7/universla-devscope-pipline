@@ -1,0 +1,62 @@
+# Pipeline configuration file
+# Place this file in your project root as 'pipeline.yml'
+
+# Security scanning configuration
+scanners:
+  - trivy          # Dependency and container vulnerability scanning
+  - gitleaks       # Secret scanning
+
+# Minimum severity level to block deployment
+# Options: CRITICAL, HIGH, MEDIUM, LOW
+severity_gate: HIGH
+
+# Deployment target: docker or k8s
+deploy_target: docker
+
+# Canary deployment configuration (for k8s only)
+canary:
+  enabled: false
+  percentage: 10%
+
+# Docker configuration
+docker:
+  build_context: .
+  dockerfile_path: ./Dockerfile
+  image_name: ghcr.io/your-username/your-repo
+
+# Kubernetes configuration
+kubernetes:
+  chart_path: ./chart
+  release_name: app
+  namespace: default
+  create_namespace: true
+
+# Environment-specific settings
+environments:
+  staging:
+    branch: develop
+    auto_deploy: true
+    replicas: 1
+  
+  production:
+    branch: main
+    auto_deploy: false
+    replicas: 3
+    enable_canary: true
+
+# Health check configuration
+health_check:
+  enabled: true
+  path: /health
+  timeout: 30
+  retries: 3
+
+# Notification settings (optional)
+notifications:
+  slack:
+    enabled: false
+    webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+  email:
+    enabled: false
+    recipients:
+      - devops@example.com

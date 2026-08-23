@@ -1,0 +1,15 @@
+# Example Terraform variables file
+# Copy this file to terraform.tfvars and fill in your actual values
+
+do_token           = "your-digitalocean-api-token"
+github_token       = "your-github-personal-access-token"
+github_owner       = "your-github-username"
+kubeconfig_path    = "~/.kube/config"
+project_name       = "pipeline-toolkit"
+region             = "nyc1"
+droplet_size       = "s-2vcpu-4gb"
+k8s_node_size      = "s-2vcpu-4gb"
+k8s_node_count     = 3
+domain_name        = "yourdomain.com"
+enable_monitoring  = true
+grafana_password   = "secure-grafana-password"

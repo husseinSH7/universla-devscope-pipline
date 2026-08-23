@@ -1,0 +1,84 @@
+# Canary deployment configuration
+# This file is used for canary deployments in Kubernetes
+
+replicaCount: 3
+
+image:
+  tag: "canary"
+
+# Canary-specific configuration
+canary:
+  enabled: true
+  percentage: 10%
+
+# Update strategy for canary
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 10%
+    maxUnavailable: 0
+
+# Resources for canary (typically lower than production)
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 125m
+    memory: 128Mi
+
+# Disable autoscaling for canary
+autoscaling:
+  enabled: false
+
+# Use canary-specific ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-by-header: "X-Canary"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+  hosts:
+    - host: yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+# Environment-specific configuration
+environment: canary
+
+app:
+  env:
+    - name: NODE_ENV
+      value: "production"
+    - name: DEPLOYMENT_TYPE
+      value: "canary"
+    - name: LOG_LEVEL
+      value: "info"
+
+# More frequent health checks for canary
+livenessProbe:
+  initialDelaySeconds: 20
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 2
+
+readinessProbe:
+  initialDelaySeconds: 5
+  periodSeconds: 3
+  timeoutSeconds: 2
+  failureThreshold: 2
+
+# Disable pod disruption budget for canary
+podDisruptionBudget:
+  enabled: false
+
+# Enable detailed monitoring for canary
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  scrapeTimeout: 5s
+  labels:
+    release: prometheus

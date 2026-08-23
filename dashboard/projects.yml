@@ -1,0 +1,42 @@
+# Projects configuration for status dashboard
+# This file defines which projects to monitor on the dashboard
+
+projects:
+  - name: "POS System"
+    owner: "your-username"
+    repo: "pos-system"
+    url: "https://github.com/your-username/pos-system"
+    workflow: "ci.yml"
+    environments:
+      - name: "staging"
+        branch: "develop"
+      - name: "production"
+        branch: "main"
+  
+  - name: "Burger App"
+    owner: "your-username"
+    repo: "burger-app"
+    url: "https://github.com/your-username/burger-app"
+    workflow: "ci.yml"
+    environments:
+      - name: "staging"
+        branch: "develop"
+      - name: "production"
+        branch: "main"
+  
+  - name: "ClimbingTribe"
+    owner: "your-username"
+    repo: "climbing-tribe"
+    url: "https://github.com/your-username/climbing-tribe"
+    workflow: "ci.yml"
+    environments:
+      - name: "staging"
+        branch: "develop"
+      - name: "production"
+        branch: "main"
+
+# Dashboard configuration
+dashboard:
+  title: "DevSecOps Pipeline Status Dashboard"
+  refresh_interval: 30  # seconds
+  theme: "dark"

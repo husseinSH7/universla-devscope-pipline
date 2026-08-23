@@ -1,0 +1,78 @@
+# Production environment values
+# Override default values for production deployments
+
+replicaCount: 3
+
+image:
+  tag: "production"
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+  hosts:
+    - host: yourdomain.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: yourdomain-tls
+      hosts:
+        - yourdomain.com
+
+# Production-specific configuration
+environment: production
+
+# Production logging
+app:
+  env:
+    - name: NODE_ENV
+      value: "production"
+    - name: LOG_LEVEL
+      value: "info"
+
+# Stricter health checks for production
+livenessProbe:
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Enable pod disruption budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+# Enable service monitor for observability
+serviceMonitor:
+  enabled: true
+  interval: 30s
+  scrapeTimeout: 10s
+  labels:
+    release: prometheus

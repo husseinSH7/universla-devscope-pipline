@@ -1,0 +1,123 @@
+# Prometheus Operator values for monitoring stack
+
+# Grafana configuration
+grafana:
+  enabled: true
+  adminPassword: changeme
+  persistence:
+    enabled: true
+    size: 10Gi
+  
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - grafana.example.com
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.example.com
+  
+  sidecar:
+    dashboards:
+      enabled: true
+    datasources:
+      enabled: true
+  
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: 'default'
+          orgId: 1
+          folder: ''
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+# Prometheus configuration
+prometheus:
+  enabled: true
+  prometheusSpec:
+    retention: 30d
+    retentionSize: 50GB
+    resources:
+      requests:
+        cpu: 500m
+        memory: 2Gi
+      limits:
+        cpu: 1000m
+        memory: 4Gi
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: standard
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+    
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorNamespaceSelectorNilUsesHelmValues: false
+
+# Alertmanager configuration
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    retention: 120h
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 200m
+        memory: 512Mi
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: standard
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
+
+# Default dashboards
+defaultDashboardsEnabled: true
+
+# Node exporter
+nodeExporter:
+  enabled: true
+
+# Kube-state-metrics
+kubeStateMetrics:
+  enabled: true
+
+# Kubernetes manifests
+kubelet:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+
+# CoreDNS
+coreDns:
+  enabled: true
+
+# Kubenetes controller manager
+kubeControllerManager:
+  enabled: true
+
+# Kubernetes scheduler
+kubeScheduler:
+  enabled: true
+
+# Kubernetes proxy
+kubeProxy:
+  enabled: true
+
+# Etcd
+etcd:
+  enabled: false  # Only for self-hosted clusters

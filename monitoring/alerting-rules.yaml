@@ -1,0 +1,113 @@
+# Prometheus alerting rules for DevSecOps Pipeline
+
+groups:
+  - name: deployment_alerts
+    interval: 30s
+    rules:
+      - alert: DeploymentRollback
+        expr: |
+          increase(kube_deployment_status_replicas_updated{namespace=~".*"}[5m]) < 0
+        for: 2m
+        labels:
+          severity: critical
+          component: deployment
+        annotations:
+          summary: "Deployment rollback detected in namespace {{ $labels.namespace }}"
+          description: "Deployment {{ $labels.deployment }} in namespace {{ $labels.namespace }} has rolled back"
+      
+      - alert: HighPodFailureRate
+        expr: |
+          sum(rate(kube_pod_status_phase{phase="Failed"}[5m])) by (namespace) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: pods
+        annotations:
+          summary: "High pod failure rate in namespace {{ $labels.namespace }}"
+          description: "Pod failure rate is {{ $value }} pods/second in namespace {{ $labels.namespace }}"
+      
+      - alert: HighMemoryUsage
+        expr: |
+          sum(container_memory_usage_bytes{namespace=~".*", container!="POD", container!=""}) by (namespace) / sum(kube_pod_container_resource_limits_memory_bytes{namespace=~".*"}) by (namespace) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          component: memory
+        annotations:
+          summary: "High memory usage in namespace {{ $labels.namespace }}"
+          description: "Memory usage is {{ $value | humanizePercentage }} in namespace {{ $labels.namespace }}"
+
+  - name: security_alerts
+    interval: 1m
+    rules:
+      - alert: VulnerabilityScanFailed
+        expr: |
+          up{job="trivy"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Vulnerability scanner is down"
+          description: "Trivy vulnerability scanner has been down for more than 5 minutes"
+      
+      - alert: SecretScanFailed
+        expr: |
+          up{job="gitleaks"} == 0
+        for: 5m
+        labels:
+          severity: critical
+          component: security
+        annotations:
+          summary: "Secret scanner is down"
+          description: "Gitleaks secret scanner has been down for more than 5 minutes"
+
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      - alert: HighCPUUsage
+        expr: |
+          sum(rate(container_cpu_usage_seconds_total{namespace=~".*", container!="POD", container!=""}[5m])) by (node) / sum(kube_node_status_capacity_cpu_cores) by (node) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: cpu
+        annotations:
+          summary: "High CPU usage on node {{ $labels.node }}"
+          description: "CPU usage is {{ $value | humanizePercentage }} on node {{ $labels.node }}"
+      
+      - alert: DiskSpaceRunningLow
+        expr: |
+          (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 5m
+        labels:
+          severity: warning
+          component: disk
+        annotations:
+          summary: "Disk space running low on {{ $labels.instance }}"
+          description: "Disk space is {{ $value | humanizePercentage }} available on {{ $labels.instance }}"
+
+  - name: application_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m])) by (service) / sum(rate(http_requests_total[5m])) by (service) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "High error rate for service {{ $labels.service }}"
+          description: "Error rate is {{ $value | humanizePercentage }} for service {{ $labels.service }}"
+      
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, service)) > 1
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High latency for service {{ $labels.service }}"
+          description: "P99 latency is {{ $value }}s for service {{ $labels.service }}"
