@@ -153,7 +153,7 @@ jobs:
           elif [ "${{ needs.detect.outputs.package_manager }}" = "pnpm" ]; then
             pnpm install --frozen-lockfile
           else
-            npm ci
+            npm install
           fi
 
       - name: Install dependencies (Python)
