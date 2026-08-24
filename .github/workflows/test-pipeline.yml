@@ -1,0 +1,21 @@
+name: Test Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test-pipeline:
+    name: Test DevSecOps Pipeline
+    uses: ./.github/workflows/pipeline.yml
+    with:
+      deploy_target: 'docker'
+      severity_gate: 'HIGH'
+      enable_canary: false
+      enable_sarif: true
+      dockerfile_path: './Dockerfile.example'
+      build_context: '.'
+    secrets:
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
