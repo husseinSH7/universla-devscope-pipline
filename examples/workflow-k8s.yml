@@ -31,7 +31,7 @@ jobs:
       dockerfile_path: './Dockerfile'
       build_context: '.'
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
       # Kubernetes deployment secrets
       kube_config: ${{ secrets.KUBE_CONFIG }}
       # Docker deployment secrets (not needed for k8s)

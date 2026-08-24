@@ -30,7 +30,7 @@ jobs:
       dockerfile_path: './Dockerfile'
       build_context: '.'
     secrets:
-      github_token: ${{ secrets.GITHUB_TOKEN }}
+      gh_token: ${{ secrets.GITHUB_TOKEN }}
       # Docker deployment secrets
       ssh_host: ${{ secrets.SSH_HOST }}
       ssh_username: ${{ secrets.SSH_USERNAME }}
