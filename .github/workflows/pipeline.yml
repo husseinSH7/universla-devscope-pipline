@@ -126,14 +126,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: ${{ needs.detect.outputs.package_manager }}
 
       - name: Set up Python
         if: needs.detect.outputs.stack == 'python'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: ${{ needs.detect.outputs.package_manager == 'pip' && 'pip' || '' }}
 
       - name: Set up Go
         if: needs.detect.outputs.stack == 'go'
